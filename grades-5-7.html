@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+    (function () {
+        // The layout needs about 1100 by 720 and cannot scroll. On a touch device,
+        // widen the viewport until the whole board fits the screen.
+        var meta = document.querySelector("meta[name=viewport]");
+        function fit() {
+            if (!window.matchMedia || !matchMedia("(pointer: coarse)").matches) return;
+            var ratio = window.innerWidth / Math.max(1, window.innerHeight);
+            var want = "width=" + Math.max(1100, Math.ceil(720 * ratio));
+            if (meta.getAttribute("content") !== want) meta.setAttribute("content", want);
+        }
+        fit();
+        window.addEventListener("load", fit);
+        window.addEventListener("resize", fit);
+        window.addEventListener("orientationchange", function () { setTimeout(fit, 300); });
+    })();
+    </script>
+    <title>Tic-Tac-Mayhem: Rosh Chodesh</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; user-select: none; overflow: hidden; }
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        .watermark-bg { 
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+            opacity: 0.05; pointer-events: none; z-index: 0; transform: scale(1.5) rotate(-10deg);
+        }
+        .cta-watermark { position: absolute; right: 10px; bottom: 5px; opacity: 0.2; pointer-events: none; }
+        .shield-overlay {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(2px);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            cursor: pointer;
+        }
+        .cta-disabled { filter: grayscale(1); opacity: 0.5; pointer-events: none; cursor: not-allowed; }
+        
+        .shatter-container { position: absolute; inset: 0; pointer-events: none; z-index: 50; }
+        .shard {
+            position: absolute; width: 15px; height: 15px; background: white; opacity: 0.8;
+            clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+            animation: explode 0.7s ease-out forwards;
+        }
+        @keyframes explode {
+            0% { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
+            100% { transform: translate(var(--tx), var(--ty)) rotate(var(--tr)) scale(0); opacity: 0; }
+        }
+
+        .team-card-btn { cursor: pointer; transition: transform 0.2s; }
+        .team-card-btn:hover { transform: translateX(4px); }
+        
+        .timer-low { color: #ef4444; animation: pulse 1s infinite; }
+        .times-up { color: #ef4444 !important; font-size: clamp(1.2rem, 3.4vw, 2.5rem) !important; line-height: 3rem !important; white-space: nowrap; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        #team-configs::-webkit-scrollbar { width: 4px; }
+        #team-configs::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+    <div id="app" class="h-screen flex flex-col items-center p-4">
+        
+        <!-- HEADER -->
+        <header class="w-full max-w-5xl flex items-center justify-between mb-4 bg-white p-5 rounded-[2.5rem] shadow-sm border border-slate-200">
+            <div class="flex items-center gap-4">
+                <div class="bg-indigo-600 p-3 rounded-2xl text-white shadow-lg">
+                    <svg viewBox="0 0 100 100" class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="4">
+                        <rect x="10" y="10" width="80" height="80" rx="10" />
+                        <text x="50" y="65" font-size="40" font-weight="900" text-anchor="middle" fill="currentColor">M</text>
+                    </svg>
+                </div>
+                <h1 class="text-2xl font-black text-slate-800 tracking-tight hidden md:block">Tic-Tac-Mayhem</h1>
+            </div>
+
+            <div class="bg-slate-100 px-8 py-2 rounded-full border-2 border-slate-200 text-center">
+                <span id="edition-name" class="text-lg font-black text-indigo-600 uppercase tracking-tight">Holiday Edition</span>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button onclick="toggleModal('info-modal')" class="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </button>
+                <button onclick="toggleModal('settings-modal')" class="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-6 items-start flex-grow">
+            <div id="team-list" class="lg:col-span-3 space-y-2"></div>
+
+            <div class="lg:col-span-6 flex flex-col items-center">
+                <div id="game-grid" class="grid grid-cols-3 gap-4 w-full aspect-square max-w-[440px]"></div>
+                <div id="winner-banner" class="hidden mt-4 w-full max-w-[440px] p-5 bg-slate-900 rounded-[2rem] text-white flex items-center justify-between shadow-2xl">
+                    <div class="flex items-center gap-4">
+                        <div class="text-amber-400"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg></div>
+                        <p id="winner-text" class="text-lg font-black"></p>
+                    </div>
+                    <button onclick="resetBoard()" class="px-6 py-2 bg-white text-slate-900 font-black rounded-xl text-sm">NEW ROUND</button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-3 space-y-4">
+                <div class="bg-white p-5 rounded-[2.5rem] border border-slate-200 text-center">
+                    <p class="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">Total Asked</p>
+                    <span id="stat-asked" class="text-4xl font-black text-indigo-600">0</span>
+                </div>
+            </div>
+        </main>
+
+        <!-- TRIVIA MODAL -->
+        <div id="trivia-modal" class="modal fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[200] items-center justify-center p-4">
+            <div class="bg-white rounded-[4rem] w-full max-w-4xl min-h-[60vh] shadow-2xl p-10 flex flex-col relative overflow-hidden">
+                <div id="card-watermark-bg" class="watermark-bg"></div>
+                <div class="relative z-10 h-full flex flex-col flex-grow">
+                    <div class="flex justify-between items-start mb-6">
+                        <div id="current-player-tag" class="flex items-center gap-3"></div>
+                        <div id="timer-display" class="flex flex-col items-end">
+                            <span id="timer-seconds" class="font-mono font-black text-5xl text-slate-500">30</span>
+                        </div>
+                    </div>
+
+                    <div class="flex-grow flex flex-col justify-center py-4">
+                        <h2 id="modal-q-text" class="text-3xl md:text-4xl font-black text-slate-800 leading-[1.15] mb-6"></h2>
+                        <button id="reveal-btn" onclick="showAnswer()" class="text-indigo-600 font-black text-lg bg-indigo-50 px-8 py-4 rounded-3xl w-fit">Reveal Answer</button>
+                        <div id="a-text-container" class="hidden mt-6 border-t-2 border-slate-50 pt-6">
+                            <p class="text-emerald-500 text-[10px] font-black uppercase tracking-[0.3em] mb-2">Official Answer</p>
+                            <h2 id="modal-a-text" class="text-2xl md:text-3xl font-black text-slate-900"></h2>
+                        </div>
+                    </div>
+
+                    <div id="cta-container" class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+                    <div id="steal-menu" class="hidden mt-6 grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SETTINGS MODAL -->
+        <div id="settings-modal" class="modal fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[300] items-center justify-center p-6">
+            <div class="bg-white rounded-[3rem] w-full max-w-2xl shadow-2xl p-8">
+                <h3 class="text-2xl font-black mb-6">Game Setup</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-[10px] font-black uppercase text-slate-400 mb-1">Database Edition</label>
+                            <select id="holiday-select" class="w-full p-3 bg-slate-50 border-2 rounded-xl font-bold text-sm"></select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black uppercase text-slate-400 mb-1">Audio</label>
+                            <div class="flex items-center gap-3 bg-slate-50 p-3 rounded-xl">
+                                <button id="mute-btn" onclick="toggleMute()" class="text-indigo-600"><svg id="vol-icon" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></button>
+                                <input id="vol-slider" type="range" min="0" max="1" step="0.1" value="0.5" class="w-full" oninput="state.volume=this.value"/>
+                            </div>
+                        </div>
+                        <div id="timer-config-list" class="grid grid-cols-5 gap-1"></div>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center"><label class="text-[10px] font-black uppercase text-slate-400">Teams</label><button onclick="addTeam()" class="text-xs font-black text-indigo-600">+ Add</button></div>
+                        <div id="team-configs" class="space-y-2 max-h-[140px] overflow-y-auto pr-1"></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button onclick="saveSettings(false)" class="py-4 bg-slate-100 font-black rounded-2xl text-xs uppercase tracking-widest">Apply</button>
+                    <button onclick="saveSettings(true)" class="py-4 bg-indigo-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest">Reset Board</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- INFO MODAL -->
+        <div id="info-modal" class="modal fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[300] items-center justify-center p-6">
+            <div class="bg-white rounded-[3rem] w-full max-w-xl shadow-2xl p-10 space-y-6 overflow-y-auto max-h-[90vh]">
+                <h3 class="text-3xl font-black">How to Play</h3>
+                <section class="space-y-4">
+                    <div>
+                        <h4 class="font-black text-indigo-600 uppercase text-[10px] mb-2">Your turn</h4>
+                        <p class="text-sm text-slate-600">Choose an empty square. A question comes up, and <b>both teams</b> work out an answer. Each captain writes the team&rsquo;s answer on a board before time runs out.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-rose-600 uppercase text-[10px] mb-2">Time&rsquo;s up</h4>
+                        <p class="text-sm text-slate-600">Both captains hold up their boards. Then the answer is revealed.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-emerald-600 uppercase text-[10px] mb-2">Claim or steal</h4>
+                        <p class="text-sm text-slate-600">If the team whose turn it is has it right, they claim the square. If they miss and the other team has it right, the other team <b>steals</b> it.</p>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-amber-600 uppercase text-[10px] mb-2">To win</h4>
+                        <p class="text-sm text-slate-600">Three in a row.</p>
+                    </div>
+                </section>
+                <button onclick="toggleModal('info-modal')" class="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl">LET'S GO</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const HOLIDAY_DB = {
+            "rc13": { name: "Rosh Chodesh: Grades 1-3", questions: [
+                {q: "What does Rosh Chodesh mean?", a: "Head of the month."},
+                {q: "When does a Jewish day start?", a: "When it gets dark."},
+                {q: "When does a Jewish month start?", a: "When the moon comes back: the first sliver."},
+                {q: "Draw it: the moon in the middle of a Jewish month.", a: "A full moon."},
+                {q: "Where does the moon’s light come from?", a: "The sun."},
+                {q: "What shape is the moon really, every single night?", a: "A ball."},
+                {q: "Draw it: a waxing moon, a moon that is growing. Which side is bright?", a: "The right side."},
+                {q: "What do we call a moon that is shrinking?", a: "Waning."},
+                {q: "What do we call the moon when it is all dark?", a: "A new moon."},
+                {q: "Draw it: a crescent moon.", a: "A thin sliver."},
+                {q: "Which holiday began two weeks ago, under a full moon?", a: "Sukkot."},
+                {q: "Today is Rosh Chodesh for which Jewish month?", a: "Cheshvan."},
+                {q: "Long ago, what did people blow to celebrate a new month?", a: "Trumpets."},
+                {q: "In the story of the sun and the moon, what did the moon ask God?", a: "Can two kings share one crown?"},
+                {q: "In the story of the sun and the moon, what did God tell the moon to do?", a: "Make yourself smaller."},
+                {q: "In the story, what did God put in the night sky to keep the moon company?", a: "The stars."},
+                {q: "Long ago, how many witnesses had to see the new moon?", a: "Two."},
+                {q: "Long ago, to which city did witnesses go to tell the judges about the new moon?", a: "Jerusalem."},
+                {q: "When the witnesses’ moons matched, what did the judges call out?", a: "Mekudash!"},
+                {q: "Rabban Gamliel, a head judge, kept pictures on his wall for the witnesses. Pictures of what?", a: "The moon."},
+                {q: "Long ago, how did news of a new month travel from mountain to mountain?", a: "By fire: torches."}
+            ]},
+            "rc57": { name: "Rosh Chodesh: Grades 5-7", questions: [
+                {q: "The Hebrew word chodesh, month, comes from which Hebrew word?", a: "Chadash, new."},
+                {q: "A Jewish day begins at evening. Which line from the creation story says so?", a: "“There was evening and there was morning.”"},
+                {q: "What had to be seen in the sky for a new Jewish month to begin?", a: "The first sliver of the moon after it goes dark."},
+                {q: "About how many days pass from one dark moon to the next?", a: "About 29 and a half."},
+                {q: "Most Jewish years have twelve months. A leap year, like this one, has how many?", a: "Thirteen."},
+                {q: "Why do some Jewish years get an extra month?", a: "Twelve moons fall about 11 days short of the sun’s year."},
+                {q: "At any moment, how much of the moon is lit by the sun?", a: "Half of it."},
+                {q: "What is the word for a moon that is growing night by night?", a: "Waxing."},
+                {q: "The night after a full moon, the moon is called waning. What does that tell you about tomorrow’s moon?", a: "It will be smaller."},
+                {q: "Draw it: a waning crescent. Which side is lit?", a: "The left side."},
+                {q: "Hanukkah begins on the 25th of its month. What does the moon look like that night?", a: "A thin sliver, almost gone."},
+                {q: "In the story of the sun and the moon, the moon asks, “What good is a candle at noon?” What had God just offered?", a: "To let the moon shine by day as well as by night."},
+                {q: "In the story of the sun and the moon, what does God say the Jewish people will do by the moon?", a: "Count their days and their years."},
+                {q: "The blessing for the new moon says the Jewish people are destined to be what, like the moon?", a: "Renewed."},
+                {q: "What was the first commandment the Jewish people received as a people, while they were still slaves in Egypt?", a: "To mark the new month."},
+                {q: "Why did the judges question the two moon witnesses apart from each other?", a: "To see whether their stories matched."},
+                {q: "When the witnesses’ stories matched, the head of the court called out “Mekudash.” What does it mean?", a: "It is made holy."},
+                {q: "When two witnesses contradicted each other, what did the court rule about their testimony?", a: "It was void: betelah."},
+                {q: "What did Rabban Gamliel, the head judge, keep on his wall for the moon witnesses?", a: "Pictures of the moon."},
+                {q: "A witness who had seen the new moon could travel to Jerusalem even on which day?", a: "Shabbat."},
+                {q: "The court once spread news of the new month by torches on mountaintops. Why did it stop?", a: "A rival group lit torches on the wrong nights."},
+                {q: "Whoever set the first day of the month also decided the date of what?", a: "The holidays, such as Yom Kippur."}
+            ]},
+            "shabbat": { name: "Shabbat", questions: [
+                {q: "What is the traditional braided bread eaten on Shabbat?", a: "Challah"},
+                {q: "How many candles are traditionally lit to usher in Shabbat?", a: "Two"},
+                {q: "What is the blessing over wine called?", a: "Kiddush"},
+                {q: "Which prayer marks the conclusion of Shabbat?", a: "Havdalah"},
+                {q: "On which day of the week does Shabbat begin?", a: "Friday"},
+                {q: "What is the phrase used to greet someone on Shabbat?", a: "Shabbat Shalom"},
+                {q: "How many meals are traditionally eaten on Shabbat?", a: "Three"},
+                {q: "What spice box is used during Havdalah?", a: "Besamim"},
+                {q: "Which specific candle is used for Havdalah?", a: "Braided multi-wick candle"},
+                {q: "What is the 'extra soul' received on Shabbat called?", a: "Neshamah Yeteirah"},
+                {q: "Which biblical event does Shabbat commemorate?", a: "Creation (God's rest on the 7th day)"},
+                {q: "What is the third meal of Shabbat called?", a: "Seudah Shlishit"},
+                {q: "What is the poem 'Woman of Valor' recited on Friday night?", a: "Eshet Chayil"},
+                {q: "What is the special slow-cooked stew often served on Shabbat morning?", a: "Cholent (or Hamin)"},
+                {q: "How many sections of the Torah are read on Shabbat morning?", a: "Seven (Aliyot)"},
+                {q: "What is the name of the canopy of peace referred to in prayers?", a: "Sukkat Shalom"},
+                {q: "What time must Shabbat candles be lit?", a: "18 minutes before sunset (standard)"},
+                {q: "What is the name for the forbidden categories of work on Shabbat?", a: "Melachot (39 categories)"},
+                {q: "Which psalm is famously sung to welcome the Shabbat Queen?", a: "Lecha Dodi"},
+                {q: "What is the white cloth used to cover the challah called?", a: "Challah Cover"}
+            ]},
+            "roshhashanah": { name: "Rosh Hashanah", questions: [
+                {q: "What is the primary instrument sounded on Rosh Hashanah?", a: "Shofar"},
+                {q: "What sweet food is traditionally dipped in honey?", a: "Apple"},
+                {q: "What does 'Rosh Hashanah' literally translate to?", a: "Head of the Year"},
+                {q: "Which fruit is eaten because its many seeds represent merits?", a: "Pomegranate"},
+                {q: "What is the ceremony of 'casting away' sins into water?", a: "Tashlich"},
+                {q: "What shape is the challah on Rosh Hashanah?", a: "Round"},
+                {q: "Which biblical figure's binding is read on the second day?", a: "Isaac (The Akedah)"},
+                {q: "How many shofar blasts are traditionally sounded in total?", a: "100"},
+                {q: "What is the long, single blast of the shofar called?", a: "Tekiah"},
+                {q: "What is the broken, three-blast sound called?", a: "Shevarim"},
+                {q: "What is the staccato, nine-blast sound called?", a: "Teruah"},
+                {q: "What is the very long final blast called?", a: "Tekiah Gedolah"},
+                {q: "In which Hebrew month does Rosh Hashanah occur?", a: "Tishrei"},
+                {q: "What is the traditional greeting for a good year?", a: "Shanah Tovah"},
+                {q: "Rosh Hashanah is also known as Yom Ha-____?", a: "Zikaron (Remembrance) or Din (Judgment)"},
+                {q: "What vegetable is eaten to represent 'cutting off' of enemies?", a: "Leeks or Beets"},
+                {q: "Which book is said to be opened to record names?", a: "Book of Life"},
+                {q: "What color is traditional for the Torah covers?", a: "White"},
+                {q: "What is the liturgical poem 'Who shall live and who shall die'?", a: "Unetanneh Tokef"},
+                {q: "How many days is Rosh Hashanah celebrated globally?", a: "Two"}
+            ]},
+            "yomkippur": { name: "Yom Kippur", questions: [
+                {q: "How long is the traditional fast on Yom Kippur?", a: "25 hours"},
+                {q: "What is the name of the opening prayer of Yom Kippur evening?", a: "Kol Nidre"},
+                {q: "What white garment is worn by some during the service?", a: "Kittel"},
+                {q: "Which biblical book is read during the afternoon (Mincha) service?", a: "Jonah"},
+                {q: "What is the final service of Yom Kippur called?", a: "Neilah"},
+                {q: "What marks the absolute end of the fast?", a: "A single long Shofar blast"},
+                {q: "Wearing shoes made of what material is forbidden?", a: "Leather"},
+                {q: "What is the central theme of Yom Kippur?", a: "Teshuvah (Repentance)"},
+                {q: "Which ceremony in the Temple is recounted in the liturgy?", a: "Avodah"},
+                {q: "What do we say instead of 'Shalom' on this day?", a: "G’mar Chatimah Tovah"},
+                {q: "Is it permitted to wash or bathe for pleasure on Yom Kippur?", a: "No"},
+                {q: "What is the name of the prayer for the departed recited?", a: "Yizkor"},
+                {q: "What does 'Neilah' literally mean?", a: "Closing (of the gates)"},
+                {q: "What is the pre-fast meal called?", a: "Seudah Mafseket"},
+                {q: "How many services are there on Yom Kippur?", a: "Five"},
+                {q: "To whom do we apologize for sins against other people?", a: "The people we wronged"},
+                {q: "What is the charity given before the holiday called?", a: "Tzedakah"},
+                {q: "What prayer contains the 13 Attributes of Mercy?", a: "Selichot"},
+                {q: "Is music played in the synagogue on this day?", a: "No"},
+                {q: "What is the most famous confession prayer?", a: "Ashamnu or Al Chet"}
+            ]},
+            "sukkot": { name: "Sukkot", questions: [
+                {q: "What is the temporary dwelling built for Sukkot called?", a: "Sukkah"},
+                {q: "The Sukkah roof (Schach) must be made of what?", a: "Organic materials (branches, etc.)"},
+                {q: "Name one of the 'Four Species'.", a: "Lulav, Etrog, Hadassim, or Aravot"},
+                {q: "Which species looks like a lemon?", a: "Etrog"},
+                {q: "How many willow branches (Aravot) are used?", a: "Two"},
+                {q: "How many myrtle branches (Hadassim) are used?", a: "Three"},
+                {q: "What is the long palm branch called?", a: "Lulav"},
+                {q: "What are the seven 'Exalted Guests' called?", a: "Ushpizin"},
+                {q: "What is the seventh day of Sukkot called?", a: "Hoshana Rabbah"},
+                {q: "How many walls must a Sukkah have at minimum?", a: "Two and a part of a third"},
+                {q: "Which biblical book is read on the Shabbat of Sukkot?", a: "Ecclesiastes (Kohelet)"},
+                {q: "What does the Etrog represent in symbolism?", a: "The Heart"},
+                {q: "What does the Lulav represent in symbolism?", a: "The Spine"},
+                {q: "What is the water-drawing celebration called?", a: "Simchat Beit HaShoevah"},
+                {q: "For how many days is Sukkot celebrated?", a: "Seven"},
+                {q: "In which direction do we wave the Lulav?", a: "Six directions"},
+                {q: "Can you see the stars through the roof?", a: "Yes (it is required)"},
+                {q: "What is the blessing said when sitting in the Sukkah?", a: "Leishev BaSukkah"},
+                {q: "Sukkot celebrates the wandering in the ____?", a: "Desert / Wilderness"},
+                {q: "What is the generic name for the Sukkot/Pesach/Shavuot group?", a: "Shalosh Regalim"}
+            ]},
+            "hanukkah": { name: "Hanukkah", questions: [
+                {q: "How many nights does Hanukkah last?", a: "Eight"},
+                {q: "What is the helper candle used to light others?", a: "Shamash"},
+                {q: "Who led the Jewish rebellion against the Greeks?", a: "Judah Maccabee"},
+                {q: "What miracle are we celebrating with the oil?", a: "One day's oil lasted eight days"},
+                {q: "What is the four-sided spinning top called?", a: "Dreidel"},
+                {q: "What are the potato pancakes eaten called?", a: "Latkes"},
+                {q: "What are the jelly donuts called?", a: "Sufganiyot"},
+                {q: "What is the name of the nine-branched candelabra?", a: "Hanukkiah"},
+                {q: "In which direction do we light the candles?", a: "Left to right (after placing right to left)"},
+                {q: "What is the Hebrew word for 'Dedication'?", a: "Hanukkah"},
+                {q: "What type of food is traditional to eat?", a: "Fried foods"},
+                {q: "Which empire were the Maccabees fighting?", a: "Seleucid Greek Empire"},
+                {q: "Who was the villainous King in the story?", a: "Antiochus IV"},
+                {q: "How many blessings are said on the first night?", a: "Three"},
+                {q: "What is the traditional Hanukkah gift of money called?", a: "Gelt"},
+                {q: "Where should the Hanukkiah ideally be placed?", a: "Window or Doorway"},
+                {q: "What prayer for miracles is added to the Amidah?", a: "Al HaNissim"},
+                {q: "Which letter is on a dreidel outside Israel but not in it?", a: "Shin"},
+                {q: "Which letter replaces Shin on an Israeli dreidel?", a: "Pei (for Po - 'here')"},
+                {q: "Which city was the Temple located in?", a: "Jerusalem"}
+            ]},
+            "purim": { name: "Purim", questions: [
+                {q: "Who is the heroine of the Purim story?", a: "Esther"},
+                {q: "Who is the villain of the Purim story?", a: "Haman"},
+                {q: "What is the name of the scroll read on Purim?", a: "Megillat Esther"},
+                {q: "What are the triangular cookies eaten called?", a: "Hamantaschen"},
+                {q: "What is the custom of giving food gifts to friends?", a: "Mishloach Manot"},
+                {q: "What is the custom of giving charity to the poor?", a: "Matanot LaEvyonim"},
+                {q: "Who was Esther's cousin/guardian?", a: "Mordechai"},
+                {q: "In which ancient empire does the story take place?", a: "Persia"},
+                {q: "What was the name of the King in the story?", a: "Ahasuerus"},
+                {q: "What does 'Purim' literally mean?", a: "Lots"},
+                {q: "What is the fast observed before Purim?", a: "Fast of Esther"},
+                {q: "Which city celebrates Purim a day later?", a: "Jerusalem (Shushan Purim)"},
+                {q: "What is a common custom regarding clothing?", a: "Wearing costumes"},
+                {q: "Mordechai refused to do what for Haman?", a: "Bow down"},
+                {q: "What is the noise-maker used on Purim?", a: "Grogger"},
+                {q: "How many times is the Megillah read?", a: "Twice"},
+                {q: "Who was the King's first wife?", a: "Vashti"},
+                {q: "Which tribe was Mordechai from?", a: "Benjamin"},
+                {q: "How many provinces did the King rule?", a: "127"},
+                {q: "What is the festive Purim meal called?", a: "Seudah"}
+            ]},
+            "passover": { name: "Passover", questions: [
+                {q: "What is the unleavened bread eaten on Passover?", a: "Matzah"},
+                {q: "What is the name of the ritual meal on the first nights?", a: "Seder"},
+                {q: "Which book is used to guide the Seder?", a: "Haggadah"},
+                {q: "How many cups of wine are traditionally drunk?", a: "Four"},
+                {q: "What are the 'Four Questions' called?", a: "Mah Nishtanah"},
+                {q: "What is the bitter herb on the Seder plate?", a: "Maror"},
+                {q: "What is the piece of matzah hidden for children?", a: "Afikoman"},
+                {q: "How many plagues did God bring upon Egypt?", a: "Ten"},
+                {q: "Who led the Israelites out of Egypt?", a: "Moses"},
+                {q: "What is the term for forbidden leavened grain?", a: "Chametz"},
+                {q: "What is the search for chametz called?", a: "Bedikat Chametz"},
+                {q: "Which sea did the Israelites cross?", a: "Red Sea"},
+                {q: "What does the roasted shank bone represent?", a: "Paschal Sacrifice"},
+                {q: "What does the roasted egg represent?", a: "Festival Sacrifice / Life"},
+                {q: "Which prophet is invited with a special cup?", a: "Elijah"},
+                {q: "What is the 'dipping' of parsley in salt water?", a: "Karpas"},
+                {q: "What is the sandwich of matzah and maror?", a: "Korech"},
+                {q: "What is the sweet paste representing mortar?", a: "Charoset"},
+                {q: "How many years were the Israelites slaves?", a: "400 (or 210)"},
+                {q: "What is the prayer 'Next Year in Jerusalem' called?", a: "L'Shana Haba'ah"}
+            ]},
+            "tubishvat": { name: "Tu Bishvat", questions: [
+                {q: "Tu Bishvat is the 'New Year for' what?", a: "Trees"},
+                {q: "What does the 'Tu' in Tu Bishvat stand for?", a: "15 (Numerical value of Tet-Vav)"},
+                {q: "What kind of food is traditionally eaten?", a: "Fruits and Nuts (esp. from Israel)"},
+                {q: "In which Hebrew month does it occur?", a: "Shevat"},
+                {q: "What is the special ritual meal for this day?", a: "Tu Bishvat Seder"},
+                {q: "Which tree is the first to bloom in Israel?", a: "Almond"},
+                {q: "The 'Seven Species' of Israel include Wheat, Barley, Grapes, Figs, Pomegranates, Olives, and ____?", a: "Dates (Honey)"},
+                {q: "What is a common modern activity on this day?", a: "Planting trees"},
+                {q: "Which Kabbalistic city popularized the Tu Bishvat Seder?", a: "Safed (Tzfat)"},
+                {q: "What is the carob tree called in Hebrew?", a: "Charuv"},
+                {q: "Is Tu Bishvat mentioned in the Torah?", a: "No (It's in the Mishnah)"},
+                {q: "How many cups of wine are in a Tu Bishvat Seder?", a: "Four (transitioning white to red)"},
+                {q: "What does the almond tree represent?", a: "Watchfulness / Speed"},
+                {q: "What is the 'Land of Milk and Honey' honey usually made from?", a: "Dates"},
+                {q: "Why was this date chosen?", a: "Calculating tree tithes / end of rainy season"},
+                {q: "What fruit has a hard shell but a soft inside?", a: "Nuts (Walnuts/Almonds)"},
+                {q: "What fruit is soft but has a pit?", a: "Olives/Dates"},
+                {q: "What fruit is edible entirely?", a: "Figs/Grapes"},
+                {q: "What is the Hebrew term for the Seven Species?", a: "Shivat HaMinim"},
+                {q: "Which ecological organization is linked to this day?", a: "JNF (KKL)"}
+            ]},
+            "shavuot": { name: "Shavuot", questions: [
+                {q: "What does Shavuot mean?", a: "Weeks"},
+                {q: "What event does it commemorate?", a: "Giving of the Torah"},
+                {q: "Where was the Torah given?", a: "Mount Sinai"},
+                {q: "What type of food is traditional?", a: "Dairy"},
+                {q: "Which biblical book is read?", a: "Ruth"},
+                {q: "How many days after Passover is Shavuot?", a: "50"},
+                {q: "What is the all-night study session called?", a: "Tikkun Leil Shavuot"},
+                {q: "What do people decorate synagogues with?", a: "Greenery/Flowers"},
+                {q: "What is the 'First Fruits' offering called?", a: "Bikkurim"},
+                {q: "Who received the Torah on the mountain?", a: "Moses"},
+                {q: "What specific dairy food is most popular?", a: "Cheesecake or Blintzes"},
+                {q: "What is the counting of 49 days called?", a: "Counting the Omer"},
+                {q: "Why is the Book of Ruth read?", a: "Harvest theme / Ruth's conversion"},
+                {q: "What are the two loaves of bread called?", a: "Shtei HaLechem"},
+                {q: "What is the mountain's significance in the story?", a: "Humility (it was a small mountain)"},
+                {q: "Is Shavuot a pilgrimage festival?", a: "Yes (one of the 3)"},
+                {q: "What is the Hebrew date for Shavuot?", a: "6 Sivan"},
+                {q: "What are the Ten Commandments called in Hebrew?", a: "Aseret HaDibrot"},
+                {q: "Shavuot is the holiday of the ____?", a: "Harvest (Katzir)"},
+                {q: "How many days is it celebrated in the Diaspora?", a: "Two"}
+            ]},
+            "simchattorah": { name: "Simchat Torah", questions: [
+                {q: "What are we celebrating on Simchat Torah?", a: "Ending and restarting the Torah cycle"},
+                {q: "What are the circles danced around the bimah?", a: "Hakafot"},
+                {q: "How many hakafot are there?", a: "Seven"},
+                {q: "What do children often carry during dancing?", a: "Flags"},
+                {q: "What is the person who reads the final verses called?", a: "Chatan Torah"},
+                {q: "What is the person who reads the first verses of Genesis called?", a: "Chatan Bereshit"},
+                {q: "Does everyone get an aliyah (Torah honor)?", a: "Yes (customarily)"},
+                {q: "What is the section for all the children called?", a: "Kol HaNe'arim"},
+                {q: "Which book of the Torah is finished?", a: "Deuteronomy (Devarim)"},
+                {q: "Which book of the Torah is started?", a: "Genesis (Bereshit)"},
+                {q: "What does Simchat Torah mean?", a: "Rejoicing in the Torah"},
+                {q: "When is it celebrated in Israel?", a: "On Shemini Atzeret"},
+                {q: "When is it celebrated outside Israel?", a: "The day after Shemini Atzeret"},
+                {q: "What do we do with the Torah scrolls?", a: "Dance with them"},
+                {q: "What do people throw to children?", a: "Candy"},
+                {q: "What is the custom of holding a Tallit over children?", a: "Kol HaNe'arim Chuppah"},
+                {q: "Are there services at night?", a: "Yes, with dancing"},
+                {q: "Is it a fast or a feast?", a: "Feast / Joyous day"},
+                {q: "What is the last word of the Torah?", a: "Yisrael (Israel)"},
+                {q: "What is the first word of the Torah?", a: "Bereshit (In the beginning)"}
+            ]},
+            "yomhashoah": { name: "Yom HaShoah", questions: [
+                {q: "What does Yom HaShoah commemorate?", a: "The Holocaust (Shoah)"},
+                {q: "What does the word 'Shoah' mean?", a: "Calamity / Destruction"},
+                {q: "What happens throughout Israel for 2 minutes?", a: "A siren sounds / everyone stops"},
+                {q: "Which uprising is often associated with the date chosen?", a: "Warsaw Ghetto Uprising"},
+                {q: "Where is the central memorial located in Jerusalem?", a: "Yad Vashem"},
+                {q: "What is the March of the Living?", a: "A walk from Auschwitz to Birkenau"},
+                {q: "How many Jews were murdered in the Holocaust?", a: "6 Million"},
+                {q: "In which Hebrew month does it occur?", a: "Nisan"},
+                {q: "What kind of candles are lit on this day?", a: "Yahrzeit (Memorial) candles"},
+                {q: "What color is associated with the memorial logo?", a: "Yellow (Star of David)"},
+                {q: "Which prayer is recited for the departed?", a: "Kaddish / El Maleh Rachamim"},
+                {q: "Who was the young girl whose diary became famous?", a: "Anne Frank"},
+                {q: "What were the 'Righteous Among the Nations'?", a: "Non-Jews who saved Jews"},
+                {q: "What was the name of the Nazi plan?", a: "The Final Solution"},
+                {q: "When was the State of Israel established relative to the Shoah?", a: "Shortly after (3 years)"},
+                {q: "What does 'Never Again' mean?", a: "Vow that such atrocities won't repeat"},
+                {q: "What are the names of the death camps?", a: "Auschwitz, Sobibor, Treblinka, etc."},
+                {q: "What is the 'Valley of the Communities'?", a: "A memorial at Yad Vashem"},
+                {q: "Is it a day of work or mourning in Israel?", a: "Official day of mourning"},
+                {q: "How are flags flown on this day?", a: "Half-mast"}
+            ]},
+            "yomhazikaron": { name: "Yom HaZikaron", questions: [
+                {q: "Who does Yom HaZikaron honor?", a: "Fallen soldiers and victims of terror"},
+                {q: "Which holiday follows immediately after?", a: "Yom HaAtzmaut (Independence)"},
+                {q: "Why are they back-to-back?", a: "To show the cost of independence"},
+                {q: "How many sirens sound in Israel on this day?", a: "Two (Evening and Morning)"},
+                {q: "What is the flower symbol of this day?", a: "Red Everlasting (Dam HaMaccabim)"},
+                {q: "Where is the main military cemetery?", a: "Mount Herzl"},
+                {q: "What is lit at the Western Wall to start the day?", a: "A memorial torch"},
+                {q: "Are entertainment venues open?", a: "No (they are closed)"},
+                {q: "What is the full name of the day?", a: "Yom HaZikaron LeChalalei Ma'archot Yisrael"},
+                {q: "What do people wear on their shirts?", a: "A memorial sticker/ribbon"},
+                {q: "Is it common to visit graves on this day?", a: "Yes"},
+                {q: "Which organization supports the families?", a: "Yad Labanim"},
+                {q: "Does the siren sound for 1 or 2 minutes in the morning?", a: "Two minutes"},
+                {q: "In which Hebrew month does it occur?", a: "Iyar"},
+                {q: "How many soldiers have fallen (approximate magnitude)?", a: "Over 24,000"},
+                {q: "Is it a happy or sad day?", a: "Very somber / sad"},
+                {q: "What happens at 8:00 PM?", a: "The first siren sounds"},
+                {q: "What happens at 11:00 AM?", a: "The second siren sounds"},
+                {q: "What is the transition ceremony called?", a: "Torch-lighting (on Mt. Herzl)"},
+                {q: "Does it honor victims of terror?", a: "Yes"}
+            ]},
+            "yomhaatzmaut": { name: "Yom HaAtzmaut", questions: [
+                {q: "What does Yom HaAtzmaut celebrate?", a: "Israel's Independence"},
+                {q: "In what year was Israel founded?", a: "1948"},
+                {q: "Who was the first Prime Minister?", a: "David Ben-Gurion"},
+                {q: "What is a very popular food activity on this day?", a: "Mangal (BBQ)"},
+                {q: "What do children hit each other with (playfully)?", a: "Plastic hammers"},
+                {q: "What is the 'International' contest held on this day?", a: "International Bible Quiz (Chidon HaTanakh)"},
+                {q: "What is the highest honor given by the state on this day?", a: "The Israel Prize"},
+                {q: "What does the air force do?", a: "A flyover (Matas)"},
+                {q: "What are the colors of the Israeli flag?", a: "Blue and White"},
+                {q: "What is the symbol in the middle of the flag?", a: "Star of David (Magen David)"},
+                {q: "Where was the Declaration of Independence signed?", a: "Tel Aviv"},
+                {q: "How many torches are lit at the ceremony?", a: "Twelve (for the tribes)"},
+                {q: "What is the national anthem called?", a: "Hatikvah"},
+                {q: "In which Hebrew month does it occur?", a: "Iyar"},
+                {q: "What is the 1948 war called in Israel?", a: "War of Independence"},
+                {q: "Is it a public holiday?", a: "Yes"},
+                {q: "What do people put on their cars?", a: "Israeli flags"},
+                {q: "Who was the first President?", a: "Chaim Weizmann"},
+                {q: "What is the 'White City'?", a: "Tel Aviv"},
+                {q: "How old is the state currently (approx)?", a: "75-80 years (depends on year)"}
+            ]},
+            "lagbaomer": { name: "Lag BaOmer", questions: [
+                {q: "What does 'Lag' stand for?", a: "33 (Lamed-Gimel)"},
+                {q: "What is the most common outdoor activity?", a: "Bonfires"},
+                {q: "Which great Sage died on this day?", a: "Rabbi Shimon bar Yochai (Rashbi)"},
+                {q: "What plague stopped on this day?", a: "The plague among Rabbi Akiva's students"},
+                {q: "Which book of mysticism is attributed to Rashbi?", a: "The Zohar"},
+                {q: "Where do thousands of people travel to?", a: "Meron"},
+                {q: "What do children traditionally play with?", a: "Bows and arrows"},
+                {q: "What is the 'Upsherin' custom?", a: "First haircut for 3-year-old boys"},
+                {q: "Lag BaOmer is the 33rd day of the ____?", a: "Omer"},
+                {q: "Is it a day of mourning or joy?", a: "Joy (break in mourning)"},
+                {q: "Are weddings allowed on this day?", a: "Yes"},
+                {q: "Who was the military leader of the revolt?", a: "Bar Kochba"},
+                {q: "Which empire were they fighting?", a: "Roman Empire"},
+                {q: "What do the bonfires represent?", a: "The light of the Torah / Rashbi"},
+                {q: "What is the 'Omer'?", a: "Measure of barley / period between Pesach/Shavuot"},
+                {q: "How many students did Rabbi Akiva lose?", a: "24,000"},
+                {q: "What is the name of the mountain in Meron?", a: "Mount Meron"},
+                {q: "What is the central theme of the day?", a: "Jewish pride / Mysticism / Student unity"},
+                {q: "Do people fast on this day?", a: "No"},
+                {q: "What is the 'Haircut' ceremony called?", a: "Chalaka / Upsherin"}
+            ]},
+            "tishabav": { name: "Tisha B'Av", questions: [
+                {q: "What are we mourning on Tisha B'Av?", a: "Destruction of the Temples"},
+                {q: "How long is the fast?", a: "25 hours"},
+                {q: "Which biblical book (Scroll) is read?", a: "Lamentations (Eicha)"},
+                {q: "On what day of the month does it occur?", a: "9th of Av"},
+                {q: "Name one of the two Temples destroyed on this day.", a: "First or Second Temple"},
+                {q: "How do people sit in the synagogue at night?", a: "On the floor / low stools"},
+                {q: "Is leather footwear allowed?", a: "No"},
+                {q: "What other tragedy is remembered on this day?", a: "Expulsion from Spain / Crusades"},
+                {q: "What is the 'Three Weeks'?", a: "Period of mourning leading up to it"},
+                {q: "What is the meal before the fast called?", a: "Seudah Mafseket"},
+                {q: "Do people wear Tallit and Tefillin in the morning?", a: "No (delayed until afternoon)"},
+                {q: "What are 'Kinnot'?", a: "Elegy prayers / dirges"},
+                {q: "Why was the Second Temple destroyed according to the Talmud?", a: "Baseless hatred (Sinat Chinam)"},
+                {q: "Which empire destroyed the First Temple?", a: "Babylonians"},
+                {q: "Which empire destroyed the Second Temple?", a: "Romans"},
+                {q: "Are you allowed to study Torah on this day?", a: "Only sad parts (Job, Lamentations)"},
+                {q: "What happens after midday?", a: "Some mourning restrictions are eased"},
+                {q: "What is the 'Shabbat Nachamu'?", a: "The Shabbat after Tisha B'Av"},
+                {q: "Is greeting people (Shalom) encouraged?", a: "No (discouraged)"},
+                {q: "What is the name of the month?", a: "Av"}
+            ]},
+            "tu_bav": { name: "Tu B'Av", questions: [
+                {q: "What is Tu B'Av often called today?", a: "Jewish Valentine's Day / Day of Love"},
+                {q: "What did the daughters of Jerusalem wear?", a: "White dresses"},
+                {q: "Where did they go to dance?", a: "In the vineyards"},
+                {q: "What does 'Tu' stand for?", a: "15"},
+                {q: "What was the purpose of the dancing?", a: "Finding a spouse / Marriage"},
+                {q: "Is it a fast day or a joyous day?", a: "Very joyous"},
+                {q: "According to the Mishnah, it is one of the two ____ days?", a: "Happiest (along with Yom Kippur)"},
+                {q: "What was the rule about the white dresses?", a: "They had to be borrowed (to not shame the poor)"},
+                {q: "What tribe-related restriction was lifted on this day?", a: "Inter-tribal marriage was allowed"},
+                {q: "In which month does it occur?", a: "Av"},
+                {q: "How many days after Tisha B'Av is it?", a: "Six"},
+                {q: "What happens to the moon on this day?", a: "It is full"},
+                {q: "Is Tachanun (penitential prayer) said?", a: "No"},
+                {q: "What is a common modern activity?", a: "Weddings / Festivals"},
+                {q: "What is the theme of the day?", a: "Unity and Love"},
+                {q: "Which biblical tribe was allowed back into the community?", a: "Benjamin"},
+                {q: "Does it have a special scroll read?", a: "No"},
+                {q: "Is it a public holiday in Israel?", a: "No, but widely celebrated"},
+                {q: "What time of year is it?", a: "Summer"},
+                {q: "Who said 'There were no greater festivals for Israel'?", a: "Rabban Shimon ben Gamliel"}
+            ]},
+            "sheminiatzeret": { name: "Shemini Atzeret", questions: [
+                {q: "What does 'Shemini Atzeret' mean?", a: "Eighth [Day] of Assembly"},
+                {q: "Does it come immediately after Sukkot?", a: "Yes"},
+                {q: "What special prayer for the seasons begins on this day?", a: "Prayer for Rain (Geshem)"},
+                {q: "In Israel, it is the same day as which other holiday?", a: "Simchat Torah"},
+                {q: "Do we still use the Four Species?", a: "No"},
+                {q: "Do we sit in the Sukkah?", a: "Customs vary (In Diaspora: Yes, but no blessing; In Israel: No)"},
+                {q: "Is it considered a separate holiday from Sukkot?", a: "Yes"},
+                {q: "What is the prayer for the departed said on this day?", a: "Yizkor"},
+                {q: "Which biblical king dedicated the First Temple on this day?", a: "Solomon"},
+                {q: "How many days is it celebrated in the Diaspora?", a: "Two (2nd day is Simchat Torah)"},
+                {q: "What is the theme of 'Atzeret'?", a: "Lingering with God / Holding back"},
+                {q: "Is work permitted?", a: "No (it is a Yom Tov)"},
+                {q: "What color is the Torah cover usually?", a: "White or standard (varies)"},
+                {q: "Which book of the Torah is being finished around now?", a: "Deuteronomy"},
+                {q: "How many festive meals are eaten?", a: "Two (Evening and Day)"},
+                {q: "Is there a specific 'species' for this day?", a: "No"},
+                {q: "What is the Hallel prayer?", a: "Psalms of praise said on holidays"},
+                {q: "What is the Musaf service?", a: "Additional service for holidays"},
+                {q: "What is the main agricultural concern?", a: "Rain for the crops"},
+                {q: "Is it a pilgrimage festival?", a: "Technically the conclusion of one"}
+            ]},
+            "roshchodesh": { name: "Rosh Chodesh", questions: [
+                {q: "What does 'Rosh Chodesh' mean?", a: "Head of the Month"},
+                {q: "What astronomical event does it follow?", a: "The New Moon"},
+                {q: "How many days can it last?", a: "One or Two"},
+                {q: "Which prayer is added to the Amidah and Grace After Meals?", a: "Ya'aleh V'Yavo"},
+                {q: "Is Hallel recited?", a: "Yes (Partial/Half Hallel)"},
+                {q: "What is the 'Blessing of the Month' called?", a: "Birkat HaChodesh"},
+                {q: "To which group is this holiday traditionally linked?", a: "Women"},
+                {q: "What is the extra service called?", a: "Musaf"},
+                {q: "Do we fast on Rosh Chodesh?", a: "No (it is forbidden)"},
+                {q: "How was it announced in ancient times?", a: "Fires on mountaintops / witnesses"},
+                {q: "What is the Hebrew calendar based on?", a: "The Moon (Lunar)"},
+                {q: "Which month has two days of Rosh Chodesh usually?", a: "Many (e.g., Kislev, Adar)"},
+                {q: "What is the 'New Moon' called in Hebrew?", a: "Molad"},
+                {q: "Which month's Rosh Chodesh is also a major holiday?", a: "Tishrei (Rosh Hashanah)"},
+                {q: "What is the specific Torah reading for this day?", a: "Sacrifices for Rosh Chodesh (Numbers)"},
+                {q: "What is the 'Sanctification of the Moon' prayer?", a: "Kiddush Levanah"},
+                {q: "Is work allowed?", a: "Yes (but some have customs not to)"},
+                {q: "Why is it linked to women?", a: "They didn't participate in the Golden Calf"},
+                {q: "How many months are in a standard Hebrew year?", a: "Twelve"},
+                {q: "How many months in a leap year?", a: "Thirteen"}
+            ]}
+        };
+
+        const COLORS = {
+            blue: { bg: 'bg-blue-600', text: 'text-blue-600', sym: 'X', hex: '#2563eb' },
+            emerald: { bg: 'bg-emerald-600', text: 'text-emerald-600', sym: 'O', hex: '#059669' },
+            amber: { bg: 'bg-amber-600', text: 'text-amber-600', sym: '▲', hex: '#d97706' },
+            rose: { bg: 'bg-rose-500', text: 'text-rose-500', sym: '✦', hex: '#f43f5e' },
+            purple: { bg: 'bg-purple-600', text: 'text-purple-600', sym: '✤', hex: '#9333ea' }
+        };
+
+        let state = {
+            teams: [
+                { id: 1, name: 'Sun', color: 'amber', score: 0 },
+                { id: 2, name: 'Moon', color: 'blue', score: 0 }
+            ],
+            holidayKey: "rc57",
+            timerSetting: 30,
+            board: Array(9).fill(null),
+            shields: Array(9).fill(0),
+            activeTeamIndex: 0,
+            winner: null,
+            deck: [],
+            currentIndex: 0,
+            pendingMove: null,
+            timeLeft: 0,
+            timerInterval: null,
+            modalActive: false,
+            isAnswerRevealed: false,
+            volume: 0.5,
+            muted: false
+        };
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSfx(f, d=0.1) {
+            if(state.muted || state.volume == 0) return;
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.setValueAtTime(state.volume * 0.1, audioCtx.currentTime);
+            o.start(); o.stop(audioCtx.currentTime + d);
+        }
+
+        function init() {
+            const h = HOLIDAY_DB[state.holidayKey];
+            state.deck = Array.from({length: h.questions.length}, (_, i) => i);
+            shuffle(state.deck);
+            updateUI();
+            renderSettings();
+            setupShortcuts();
+        }
+
+        function shuffle(arr) {
+            for(let i=arr.length-1; i>0; i--){
+                const j = Math.floor(Math.random()*(i+1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        }
+
+        function setupShortcuts() {
+            window.onkeydown = (e) => {
+                if(state.modalActive) {
+                    if(e.code === 'Space') showAnswer();
+                    if(e.code === 'Escape') closeModal();
+                    return;
+                }
+                if(e.key >= '1' && e.key <= state.teams.length.toString()) setTurn(parseInt(e.key)-1);
+                if(e.key.toLowerCase() === 's') toggleModal('settings-modal');
+            };
+        }
+
+        function setTurn(i) { state.activeTeamIndex = i; playSfx(440); updateUI(); }
+
+        function triggerShatter(idx) {
+            const cells = document.querySelectorAll('#game-grid button');
+            const cell = cells[idx];
+            if(!cell) return;
+            const container = document.createElement('div');
+            container.className = 'shatter-container';
+            cell.appendChild(container);
+            const owner = state.teams.find(t => t.id === state.board[idx]);
+            const color = owner ? COLORS[owner.color].hex : '#cbd5e1';
+            for(let i=0; i<15; i++) {
+                const s = document.createElement('div');
+                s.className = 'shard';
+                s.style.left = '50%'; s.style.top = '50%';
+                s.style.background = color;
+                s.style.setProperty('--tx', (Math.random()-0.5)*200+'px');
+                s.style.setProperty('--ty', (Math.random()-0.5)*200+'px');
+                s.style.setProperty('--tr', Math.random()*720+'deg');
+                container.appendChild(s);
+            }
+            setTimeout(() => container.remove(), 800);
+            state.shields[idx] = 0;
+            playSfx(150, 0.4);
+            
+            // End turn logic
+            state.activeTeamIndex = (state.activeTeamIndex + 1) % state.teams.length;
+            decayShields();
+            updateUI();
+        }
+
+        function handleCellClick(idx) {
+            if(state.winner || state.modalActive || Date.now() - (state.lastClose||0) < 400) return;
+            if(state.shields[idx] > 0 && state.board[idx] !== state.teams[state.activeTeamIndex].id) {
+                triggerShatter(idx);
+                return;
+            }
+            state.pendingMove = idx;
+            openTrivia();
+        }
+
+        function handleCellRightClick(e, idx) {
+            e.preventDefault();
+            if(state.winner || state.modalActive) return;
+            const curId = state.board[idx];
+            const curSh = state.shields[idx];
+            if(curId === null) {
+                state.board[idx] = state.teams[0].id; state.shields[idx] = 0;
+            } else {
+                const tIdx = state.teams.findIndex(t => t.id === curId);
+                if(curSh === 0) state.shields[idx] = 2;
+                else if(curSh === 2) state.shields[idx] = 1;
+                else {
+                    if(tIdx < state.teams.length - 1) {
+                        state.board[idx] = state.teams[tIdx + 1].id; state.shields[idx] = 0;
+                    } else {
+                        state.board[idx] = null; state.shields[idx] = 0;
+                    }
+                }
+            }
+            playSfx(300); updateUI();
+        }
+
+        function openTrivia() {
+            state.modalActive = true;
+            state.isAnswerRevealed = false;
+            document.getElementById('trivia-modal').classList.add('active');
+            const active = state.teams[state.activeTeamIndex];
+            const c = COLORS[active.color];
+            
+            const qSet = HOLIDAY_DB[state.holidayKey].questions;
+            const qIdx = state.deck[state.currentIndex % qSet.length];
+            const q = qSet[qIdx];
+
+            document.getElementById('modal-q-text').innerText = q.q;
+            document.getElementById('modal-a-text').innerText = q.a;
+            document.getElementById('a-text-container').classList.add('hidden');
+            document.getElementById('reveal-btn').classList.remove('hidden');
+            document.getElementById('steal-menu').classList.add('hidden');
+            document.getElementById('cta-container').classList.remove('hidden');
+            document.getElementById('card-watermark-bg').innerHTML = `<svg viewBox="0 0 100 100" class="w-full h-full" style="color:${c.hex}"><text x="50" y="70" font-size="80" font-weight="900" text-anchor="middle" fill="currentColor">${c.sym}</text></svg>`;
+            document.getElementById('current-player-tag').innerHTML = `<div class="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black ${c.bg}">${c.sym}</div><div><p class="text-[10px] font-black uppercase text-slate-400">Current Turn</p><p class="font-black text-lg">${active.name}</p></div>`;
+
+            if(state.timerSetting > 0) {
+                state.timeLeft = state.timerSetting;
+                document.getElementById('timer-seconds').innerText = state.timeLeft;
+                document.getElementById('timer-seconds').classList.remove('timer-low', 'times-up');
+                startTimer();
+            } else { document.getElementById('timer-seconds').innerText = "--"; }
+            renderCTAs();
+        }
+
+        function timesUp() {
+            const t = document.getElementById('timer-seconds');
+            t.innerText = "TIME'S UP";
+            t.classList.remove('timer-low'); t.classList.add('times-up');
+            playSfx(196, 0.6);
+        }
+
+        function startTimer() {
+            clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                state.timeLeft--;
+                document.getElementById('timer-seconds').innerText = Math.max(0, state.timeLeft);
+                if(state.timeLeft <= 5) document.getElementById('timer-seconds').classList.add('timer-low');
+                if(state.timeLeft <= 0) { clearInterval(state.timerInterval); timesUp(); }
+            }, 1000);
+        }
+
+        function showAnswer() {
+            if(state.isAnswerRevealed) return;
+            clearInterval(state.timerInterval);
+            state.isAnswerRevealed = true;
+            document.getElementById('a-text-container').classList.remove('hidden');
+            document.getElementById('reveal-btn').classList.add('hidden');
+            document.querySelectorAll('.cta-btn').forEach(b => b.classList.remove('cta-disabled'));
+            playSfx(600);
+        }
+
+        function renderCTAs() {
+            const active = state.teams[state.activeTeamIndex];
+            const stealers = state.teams.filter((_, i) => i !== state.activeTeamIndex);
+            const isOwner = state.board[state.pendingMove] === active.id;
+            
+            let stealStyle = "";
+            if(stealers.length > 1) {
+                stealStyle = `background: linear-gradient(135deg, ${stealers.map(s => COLORS[s.color].hex).join(', ')});`;
+            } else {
+                stealStyle = `background-color: ${COLORS[stealers[0].color].hex};`;
+            }
+
+            const container = document.getElementById('cta-container');
+            container.innerHTML = `
+                <button onclick="resolve('miss')" class="cta-btn relative py-6 bg-rose-600 text-white font-black text-xl rounded-[2.5rem] cta-disabled">
+                    MISSED <div class="cta-watermark text-5xl">?</div>
+                </button>
+                <button onclick="resolve('success')" class="cta-btn relative py-6 ${COLORS[active.color].bg} text-white font-black text-xl rounded-[2.5rem] cta-disabled">
+                    ${isOwner ? '+ SHIELD' : 'SUCCESS'} <div class="cta-watermark text-5xl">${isOwner ? '🛡️' : COLORS[active.color].sym}</div>
+                </button>
+                <button onclick="handleStealAction()" class="cta-btn relative py-6 text-white font-black text-xl rounded-[2.5rem] cta-disabled shadow-xl" style="${stealStyle}">
+                    STEAL <div class="flex absolute top-2 right-2 opacity-30">${stealers.map(s => `<span class="text-sm px-0.5">${COLORS[s.color].sym}</span>`).join('')}</div>
+                </button>
+            `;
+        }
+
+        function handleStealAction() {
+            const stealers = state.teams.filter((_, i) => i !== state.activeTeamIndex);
+            if(stealers.length === 1) resolve('steal', stealers[0].id);
+            else showStealMenu();
+        }
+
+        function showStealMenu() {
+            document.getElementById('cta-container').classList.add('hidden');
+            const menu = document.getElementById('steal-menu');
+            menu.classList.remove('hidden');
+            const stealers = state.teams.filter((_, i) => i !== state.activeTeamIndex);
+            menu.innerHTML = stealers.map(s => {
+                const isOwner = state.board[state.pendingMove] === s.id;
+                return `
+                <button onclick="resolve('steal', ${s.id})" class="relative py-5 ${COLORS[s.color].bg} text-white font-black rounded-3xl shadow-lg text-sm">
+                    ${s.name}<br/><span class="text-[8px] uppercase opacity-75">${isOwner ? '+ SHIELD' : 'CLAIM'}</span>
+                    <div class="cta-watermark text-3xl">${COLORS[s.color].sym}</div>
+                </button>`;
+            }).join('') + `<button onclick="closeSteal()" class="col-span-full py-2 bg-slate-200 text-slate-600 font-black rounded-xl text-xs">Cancel</button>`;
+        }
+        
+        function closeSteal() { document.getElementById('steal-menu').classList.add('hidden'); document.getElementById('cta-container').classList.remove('hidden'); }
+
+        function resolve(act, stealerId = null) {
+            clearInterval(state.timerInterval);
+            const active = state.teams[state.activeTeamIndex];
+            const idx = state.pendingMove;
+
+            if(act === 'success') {
+                if(state.board[idx] === active.id) state.shields[idx] = 2;
+                else { state.board[idx] = active.id; state.shields[idx] = 0; }
+            } else if(act === 'steal') {
+                if(state.board[idx] === stealerId) state.shields[idx] = 2;
+                else { state.board[idx] = stealerId; state.shields[idx] = 0; }
+            }
+
+            state.currentIndex++;
+            if(state.currentIndex >= state.deck.length) {
+                const last = state.deck[state.deck.length - 1];
+                shuffle(state.deck);
+                if(state.deck.length > 1 && state.deck[0] === last) {
+                    state.deck[0] = state.deck[1]; state.deck[1] = last;
+                }
+                state.currentIndex = 0;
+            }
+            state.activeTeamIndex = (state.activeTeamIndex + 1) % state.teams.length;
+            decayShields();
+            closeModal();
+            
+            const winId = checkWin(state.board);
+            if(winId) {
+                state.winner = winId;
+                if(winId !== 'draw') {
+                    state.teams = state.teams.map(t => t.id === winId ? {...t, score: t.score+1} : t);
+                    if(typeof confetti === 'function') confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                }
+            }
+            updateUI();
+        }
+
+        function decayShields() {
+            state.shields = state.shields.map(s => Math.max(0, s - 1));
+        }
+
+        function checkWin(g) {
+            const l = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            for(let p of l) if(g[p[0]] && g[p[0]] === g[p[1]] && g[p[0]] === g[p[2]]) return g[p[0]];
+            return g.includes(null) ? null : 'draw';
+        }
+
+        function updateUI() {
+            document.getElementById('edition-name').innerText = HOLIDAY_DB[state.holidayKey].name;
+            document.getElementById('stat-asked').innerText = state.currentIndex;
+
+            const list = document.getElementById('team-list');
+            list.innerHTML = state.teams.map((t, i) => {
+                const active = state.activeTeamIndex === i;
+                return `
+                    <div onclick="setTurn(${i})" class="team-card-btn p-3 rounded-2xl border-2 ${active ? `border-${t.color}-600 bg-${t.color}-50 shadow-md` : 'border-transparent bg-white shadow-sm'}">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-xs ${COLORS[t.color].bg}">${COLORS[t.color].sym}</div>
+                                <span class="font-black text-xs text-slate-700 truncate max-w-[80px]">${t.name}</span>
+                            </div>
+                            <span class="text-xl font-black">${t.score}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const grid = document.getElementById('game-grid');
+            grid.innerHTML = state.board.map((cellId, i) => {
+                const owner = state.teams.find(t => t.id === cellId);
+                const c = owner ? COLORS[owner.color] : null;
+                const shieldVal = state.shields[i];
+                return `
+                    <button onclick="handleCellClick(${i})" oncontextmenu="handleCellRightClick(event, ${i})"
+                        class="relative aspect-square rounded-[2rem] flex items-center justify-center text-4xl font-black border-4 transition-all
+                        ${!owner ? 'bg-white border-slate-100 hover:bg-slate-50' : `${c.bg} border-slate-200 text-white shadow-inner`}">
+                        ${owner ? c.sym : ''}
+                        ${shieldVal > 0 ? `
+                            <div class="absolute inset-0 shield-overlay flex flex-col items-center justify-center pointer-events-none rounded-[1.8rem]">
+                                <svg class="w-1/3 h-1/3 text-white/50 mb-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/></svg>
+                                <span class="text-xs text-white font-black">${shieldVal}</span>
+                            </div>` : ''}
+                    </button>
+                `;
+            }).join('');
+
+            const b = document.getElementById('winner-banner');
+            if(state.winner) {
+                b.classList.remove('hidden');
+                document.getElementById('winner-text').innerText = state.winner === 'draw' ? "Draw!" : state.teams.find(t=>t.id===state.winner).name + " Wins!";
+            } else b.classList.add('hidden');
+        }
+
+        function renderSettings() {
+            const hSelect = document.getElementById('holiday-select');
+            const keep = hSelect.value || state.holidayKey;
+            hSelect.innerHTML = Object.entries(HOLIDAY_DB).map(([k, v]) => `<option value="${k}" ${keep === k ? 'selected' : ''}>${v.name}</option>`).join('');
+
+            document.getElementById('timer-config-list').innerHTML = [0,15,30,45,60].map(t => `<button onclick="state.timerSetting=${t}; renderSettings();" class="py-2 rounded-xl text-[8px] font-black border-2 ${state.timerSetting===t ? 'bg-slate-900 text-white border-slate-900' : 'bg-white border-slate-100'}">${t||'OFF'}</button>`).join('');
+
+            const usedColors = state.teams.map(t => t.color);
+            document.getElementById('team-configs').innerHTML = state.teams.map((t, i) => `
+                <div class="bg-slate-50 p-2 rounded-xl flex items-center gap-2">
+                    <input onchange="state.teams[${i}].name=this.value" value="${t.name}" class="bg-transparent font-bold text-[10px] flex-grow px-2 outline-none"/>
+                    <div class="flex gap-1">
+                        ${Object.keys(COLORS).map(c => {
+                            const isTaken = usedColors.includes(c) && t.color !== c;
+                            return `<button onclick="${isTaken ? '' : `state.teams[${i}].color='${c}'; renderSettings();`}" 
+                                class="w-3 h-3 rounded-full ${COLORS[c].bg} ${t.color===c?'ring-2 ring-slate-800':''} ${isTaken ? 'opacity-10 cursor-not-allowed' : 'opacity-100'}"></button>`;
+                        }).join('')}
+                    </div>
+                    ${state.teams.length > 2 ? `<button onclick="removeTeam(${i})" class="text-rose-500 font-bold px-1 text-sm">×</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function addTeam() {
+            if(state.teams.length < 5) {
+                const usedColors = state.teams.map(t => t.color);
+                const nextColor = Object.keys(COLORS).find(c => !usedColors.includes(c)) || 'blue';
+                state.teams.push({id: Date.now(), name: `Team ${state.teams.length+1}`, color: nextColor, score: 0});
+                renderSettings();
+            }
+        }
+        function removeTeam(i) { state.teams.splice(i, 1); renderSettings(); }
+
+        function saveSettings(fullReset) {
+            const newHoliday = document.getElementById('holiday-select').value;
+            if(newHoliday !== state.holidayKey) {
+                state.holidayKey = newHoliday;
+                const h = HOLIDAY_DB[state.holidayKey];
+                state.deck = Array.from({length: h.questions.length}, (_, i) => i);
+                shuffle(state.deck);
+                state.currentIndex = 0;
+            }
+            if(fullReset) {
+                state.board = Array(9).fill(null); state.shields = Array(9).fill(0);
+                state.winner = null;
+            }
+            toggleModal('settings-modal'); updateUI();
+        }
+
+        function toggleMute() { state.muted = !state.muted; document.getElementById('vol-icon').style.opacity = state.muted ? 0.3 : 1; }
+        function toggleModal(id) { document.getElementById(id).classList.toggle('active'); state.modalActive = document.querySelector('.modal.active') !== null; if(!state.modalActive) state.lastClose = Date.now(); }
+        function closeModal() { document.querySelectorAll('.modal').forEach(m => m.classList.remove('active')); state.modalActive = false; state.lastClose = Date.now(); clearInterval(state.timerInterval); }
+        function resetBoard() { state.board = Array(9).fill(null); state.shields = Array(9).fill(0); state.winner = null; updateUI(); }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
